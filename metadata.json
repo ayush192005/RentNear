@@ -1,0 +1,6 @@
+{
+  "name": "RentNear",
+  "description": "Find rental homes, flats, rooms, shops, and offices in your local area with AI search, interactive maps, and direct owner contact.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

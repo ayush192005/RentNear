@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Main House Structure -->
+    <!-- Roof -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,26 L27,48 L32,52 L54,34.5 L76,52 L81,48 Z" />
+    <!-- Chimney -->
+    <path
+        android:fillColor="#E6FFFA"
+        android:pathData="M69,32 L75,32 L75,44 L69,39.5 Z" />
+    <!-- House Body -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M33,49 L33,76 C33,78.2 34.8,80 37,80 L71,80 C73.2,80 75,78.2 75,76 L75,49 L54,32 Z" />
+    <!-- Door cutout / contrasting entrance -->
+    <path
+        android:fillColor="#0D9488"
+        android:pathData="M48,60 C48,56.7 50.7,54 54,54 C57.3,54 60,56.7 60,60 L60,80 L48,80 Z" />
+    <!-- Windows -->
+    <path
+        android:fillColor="#CCFBF1"
+        android:pathData="M38,54 L44,54 L44,62 L38,62 Z" />
+    <path
+        android:fillColor="#CCFBF1"
+        android:pathData="M64,54 L70,54 L70,62 L64,62 Z" />
+    <!-- Location Pin Accent in upper corner -->
+    <path
+        android:fillColor="#FBBF24"
+        android:pathData="M73,25 C69.7,25 67,27.7 67,31 C67,35.5 73,42 73,42 C73,42 79,35.5 79,31 C79,27.7 76.3,25 73,25 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M73,29 A2,2 0 1,0 73,33 A2,2 0 1,0 73,29 Z" />
+</vector>
