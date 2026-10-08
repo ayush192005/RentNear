@@ -2,103 +2,92 @@
 
 > Find houses, flats, rooms, shops, offices, and other rental properties near you.
 
-RentNear is a rental-property discovery platform designed to make finding rental properties easier, faster, and more convenient.
-
-Users can explore available properties, view important details, check locations, compare options, save properties, and contact property owners.
+RentNear is an Android rental-property discovery application that helps users find rental properties and allows property owners to publish and manage their listings.
 
 ## ✨ Features
 
-- 🏠 Browse rental properties
-- 🔎 Search by location and property type
-- 📍 View property location
-- 💰 View rental price
+### 👤 For Tenants
+
+- 🔎 Search rental properties
+- 📍 Search by location
+- 🏠 Browse different property types
+- 💰 View rental prices
 - 📐 View property size
 - 🛏️ View bedrooms and bathrooms
-- 🅿️ View available facilities
+- 🛠️ View available facilities
 - ❤️ Save favorite properties
-- 👤 Property owner profiles
-- 🏢 Owner dashboard
-- ➕ Owners can post houses and shops
+- 👤 View property owner information
+- 📞 Contact property owners
+
+### 🏢 For Property Owners
+
+- 👤 Create an account
+- ➕ Add rental properties
+- 📝 Publish property listings
 - ✏️ Edit property listings
-- 🗑️ Remove listings
-- 📱 Mobile-friendly interface
-- 🌐 Simple and modern UI
-- 🔐 User authentication
-- 🗄️ Supabase PostgreSQL database
+- 🗑️ Remove property listings
+- 📋 Manage your properties
 
-## 🎯 Problem
+## 🏠 Property Types
 
-Finding rental properties can be difficult because information is often scattered across different platforms, social media posts, brokers, and local contacts.
+RentNear supports:
 
-RentNear aims to provide a simple platform where users can discover rental properties in their preferred area and directly connect with property owners.
+- House
+- Flat
+- Room
+- Shop
+- Office
+- Other rental properties
 
-## 💡 How RentNear Works
+## 🛠️ Technologies Used
 
-### For Tenants
-
-1. Open RentNear
-2. Select your location
-3. Search for a property
-4. Filter by property type
-5. View property details
-6. Save interesting properties
-7. Contact the owner
-
-### For Property Owners
-
-1. Create an account
-2. Open the Owner Hub
-3. Add your property
-4. Enter price, size, location, facilities, and other details
-5. Publish the listing
-6. Manage tenant inquiries
-
-## 🏘️ Property Types
-
-RentNear supports different types of properties:
-
-- 🏠 House
-- 🏢 Flat
-- 🏬 Shop
-- 🛏️ Room
-- 🏢 Office
-- 🏘️ Other rental properties
-
-## 🛠️ Technology
-
-The project is built using modern web technologies.
-
-| Technology | Purpose |
-|---|---|
-| HTML / CSS | User interface |
-| JavaScript | Application logic |
-| Supabase | Database & backend services |
-| PostgreSQL | Property data storage |
-| Responsive Design | Mobile and desktop support |
+- **Kotlin** – Android development
+- **Jetpack Compose** – User interface
+- **Android SDK** – Android platform
+- **Supabase** – Backend services
+- **PostgreSQL** – Database
+- **Gemini API** – AI functionality
+- **Firebase** – Supporting services
+- **Gradle** – Build system
 
 ## 🗄️ Backend
 
-RentNear uses **Supabase** for backend functionality.
-
-The database stores information such as:
+RentNear uses Supabase and PostgreSQL to manage application data such as:
 
 - Users
-- Properties
+- Property listings
 - Property owners
 - Rental prices
 - Locations
 - Property facilities
 - Saved properties
-- Availability status
+- Availability information
 
-## 🔒 Security
+## 📱 Download
 
-Sensitive credentials such as Supabase secret keys should never be included in the source code or public GitHub repository.
+The Android APK can be downloaded from the **Releases** section of this GitHub repository.
 
-Use environment variables for private configuration.
+### Installation
 
-Example:
+1. Download the latest APK.
+2. Open the APK on your Android phone.
+3. Allow installation from the required source if Android asks.
+4. Tap **Install**.
+5. Open RentNear.
 
-```env
-SUPABASE_URL=your_supabase_project_url
-SUPABASE_ANON_KEY=your_supabase_publishable_key
+> ⚠️ RentNear is currently distributed as an APK and is not available on Google Play Store.
+
+## 🚀 Build the Project
+
+### Requirements
+
+- JDK 17
+- Android SDK
+- Android device or emulator
+- Supabase project
+- Gemini API key
+
+### Clone the Repository
+
+```bash
+git clone https://github.com/YOUR-USERNAME/rentnear.git
