@@ -65,7 +65,7 @@ RentNear uses Supabase and PostgreSQL to manage application data such as:
 
 ## 📥 Download RentNear
 
-👉 [Download RentNear APK](https://github.com/YOUR-ACTUAL-USERNAME/rentnear/releases/latest)
+👉 [Download RentNear APK](https://github.com/ayush192005/rentnear/releases/latest)
 
 Download the latest version of RentNear and install it on your Android device.
 
