@@ -530,7 +530,12 @@ fun ProfileScreen(
     if (showSupabaseConfigDialog) {
         SupabaseConfigDialog(
             helper = viewModel.supabaseHelper,
-            onDismiss = { showSupabaseConfigDialog = false }
+            onDismiss = { showSupabaseConfigDialog = false },
+            onSaved = {
+                showSupabaseConfigDialog = false
+                viewModel.refreshRemoteData()
+                Toast.makeText(context, "Supabase configured! Syncing listings...", Toast.LENGTH_SHORT).show()
+            }
         )
     }
 }
@@ -681,7 +686,8 @@ private fun EditProfileDialog(
 @Composable
 private fun SupabaseConfigDialog(
     helper: com.example.data.supabase.SupabaseHelper,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onSaved: () -> Unit = onDismiss
 ) {
     val coroutineScope = rememberCoroutineScope()
     var url by remember { mutableStateOf(helper.supabaseUrl) }
@@ -719,8 +725,7 @@ private fun SupabaseConfigDialog(
 
                 OutlinedButton(
                     onClick = {
-                        helper.supabaseUrl = url
-                        helper.supabaseAnonKey = key
+                        helper.setCredentials(url, key)
                         isTesting = true
                         testStatus = null
                         coroutineScope.launch {
@@ -750,12 +755,11 @@ private fun SupabaseConfigDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    helper.supabaseUrl = url
-                    helper.supabaseAnonKey = key
-                    onDismiss()
+                    helper.setCredentials(url, key)
+                    onSaved()
                 }
             ) {
-                Text("Save")
+                Text("Save & Sync")
             }
         },
         dismissButton = {

@@ -89,17 +89,32 @@ class RentNearViewModel(
         .map { it.toSet() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
 
+    // Remote sync state
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
+
+    private val _syncError = MutableStateFlow<String?>(null)
+    val syncError: StateFlow<String?> = _syncError.asStateFlow()
+
     init {
         viewModelScope.launch {
             propertyRepository.ensureSeeded()
-            // Single source of truth sync: pull latest remote properties to refresh local Room
-            propertyRepository.refreshProperties()
+            refreshRemoteData()
         }
     }
 
-    fun refreshRemoteData() {
+    fun refreshRemoteData(onComplete: (Result<List<Property>>) -> Unit = {}) {
         viewModelScope.launch {
-            propertyRepository.refreshProperties()
+            _isRefreshing.value = true
+            val result = propertyRepository.refreshProperties()
+            if (result.isSuccess) {
+                _syncError.value = null
+            } else {
+                val err = result.exceptionOrNull()?.message ?: "Sync failed"
+                _syncError.value = err
+            }
+            _isRefreshing.value = false
+            onComplete(result)
         }
     }
 
@@ -151,35 +166,51 @@ class RentNearViewModel(
     }
 
     // Owner Operations
-    fun saveProperty(property: Property, onComplete: () -> Unit = {}) {
+    fun saveProperty(property: Property, onResult: (Result<Property>) -> Unit = {}) {
         viewModelScope.launch {
-            propertyRepository.saveProperty(property)
-            onComplete()
+            val result = propertyRepository.saveProperty(property)
+            if (result.isSuccess) {
+                // Refresh listings cache to keep all views synchronized
+                propertyRepository.refreshProperties()
+            }
+            onResult(result)
         }
     }
 
-    fun updateProperty(property: Property, onComplete: () -> Unit = {}) {
+    fun updateProperty(property: Property, onResult: (Result<Property>) -> Unit = {}) {
         viewModelScope.launch {
-            propertyRepository.updateProperty(property)
-            onComplete()
+            val result = propertyRepository.updateProperty(property)
+            if (result.isSuccess) {
+                propertyRepository.refreshProperties()
+            }
+            onResult(result)
         }
     }
 
-    fun updatePropertyStatus(propertyId: String, status: PropertyStatus) {
+    fun updatePropertyStatus(propertyId: String, status: PropertyStatus, onResult: (Result<Unit>) -> Unit = {}) {
         viewModelScope.launch {
-            propertyRepository.updatePropertyStatus(propertyId, status)
+            val result = propertyRepository.updatePropertyStatus(propertyId, status, currentUser.value.id)
+            onResult(result)
         }
     }
 
-    fun deleteProperty(propertyId: String) {
+    fun deleteProperty(propertyId: String, onResult: (Result<Unit>) -> Unit = {}) {
         viewModelScope.launch {
-            propertyRepository.deletePropertyById(propertyId)
+            val result = propertyRepository.deletePropertyById(propertyId, currentUser.value.id)
+            if (result.isSuccess) {
+                propertyRepository.refreshProperties()
+            }
+            onResult(result)
         }
     }
 
-    fun deleteProperty(property: Property) {
+    fun deleteProperty(property: Property, onResult: (Result<Unit>) -> Unit = {}) {
         viewModelScope.launch {
-            propertyRepository.deleteProperty(property)
+            val result = propertyRepository.deleteProperty(property)
+            if (result.isSuccess) {
+                propertyRepository.refreshProperties()
+            }
+            onResult(result)
         }
     }
 

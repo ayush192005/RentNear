@@ -2,7 +2,6 @@ package com.example.data.repository
 
 import android.util.Log
 import com.example.data.local.AppDatabase
-import com.example.data.local.SeedData
 import com.example.data.local.daos.FavoriteDao
 import com.example.data.local.daos.LeadDao
 import com.example.data.local.daos.PropertyDao
@@ -23,12 +22,12 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 
 /**
- * PropertyRepository orchestrates data between the Remote Supabase API
- * and the Local Room Database, implementing the Single Source of Truth (SSOT) pattern.
+ * PropertyRepository coordinates data between Remote Supabase PostgreSQL
+ * and Local Room SQLite Database, ensuring Supabase is the Single Source of Truth (SSOT).
  *
- * - Room is the Single Source of Truth: UI always observes Room Flow streams.
- * - Network refreshes update Room, which automatically emits changes to the UI.
- * - Write operations persist to Room immediately, then sync with Supabase when connected.
+ * - Supabase PostgreSQL is the Single Source of Truth for shared property listings.
+ * - Posts, updates, and deletes are committed to Supabase before reporting success.
+ * - Local Room database functions as an offline-capable reactive cache.
  */
 class PropertyRepository(
     val propertyDao: PropertyDao,
@@ -50,18 +49,23 @@ class PropertyRepository(
         supabaseHelper = supabaseHelper
     )
 
+    private var lastConfiguredUrl: String = ""
+
     private fun getActiveApiService(): SupabaseApiService? {
-        if (remoteApiService != null) return remoteApiService
-        val helper = supabaseHelper ?: return null
+        val helper = supabaseHelper ?: return remoteApiService
         if (!helper.isConfigured) return null
-        return try {
-            val service = SupabaseNetworkClient.createService(helper.supabaseUrl)
-            remoteApiService = service
-            service
-        } catch (e: Exception) {
-            Log.e("PropertyRepository", "Failed to create Supabase service: ${e.message}")
-            null
+
+        val currentUrl = helper.supabaseUrl
+        if (remoteApiService == null || lastConfiguredUrl != currentUrl) {
+            try {
+                remoteApiService = SupabaseNetworkClient.createService(currentUrl)
+                lastConfiguredUrl = currentUrl
+            } catch (e: Exception) {
+                Log.e("PropertyRepository", "Failed to create Supabase service: ${e.message}")
+                return null
+            }
         }
+        return remoteApiService
     }
 
     // ==========================================
@@ -88,7 +92,7 @@ class PropertyRepository(
     }
 
     // ==========================================
-    // SINGLE SOURCE OF TRUTH (ROOM OBSERVABLES)
+    // LOCAL ROOM OBSERVABLES (REACTIVE UI STREAM)
     // ==========================================
 
     fun getAllCitiesFlow(): Flow<List<String>> = propertyDao.getAllCitiesFlow()
@@ -179,16 +183,16 @@ class PropertyRepository(
     // ==========================================
 
     /**
-     * Refreshes properties from Supabase Remote API and updates the local Room database.
+     * Refreshes properties from Supabase Remote PostgreSQL and synchronizes the local Room cache.
      * The UI automatically reacts to Room updates via Flow.
      */
-    suspend fun refreshProperties(limit: Int = 50): Result<List<Property>> = withContext(Dispatchers.IO) {
-        val api = getActiveApiService()
+    suspend fun refreshProperties(limit: Int = 100): Result<List<Property>> = withContext(Dispatchers.IO) {
         val helper = supabaseHelper
+        val api = getActiveApiService()
         if (api == null || helper == null || !helper.isConfigured) {
-            // Local fallback when Supabase is not configured
-            ensureSeeded()
-            return@withContext Result.success(emptyList())
+            return@withContext Result.failure(
+                IllegalStateException("Supabase is not configured. Please configure your Supabase URL and Anon Key in Profile settings.")
+            )
         }
 
         try {
@@ -198,6 +202,9 @@ class PropertyRepository(
                 limit = limit
             )
             val domainProperties = dtoList.map { it.toDomain() }
+
+            // Supabase PostgreSQL is the SSOT: sync fresh remote listings into Room
+            propertyDao.deleteAllProperties()
             if (domainProperties.isNotEmpty()) {
                 propertyDao.insertAll(domainProperties)
             }
@@ -212,8 +219,8 @@ class PropertyRepository(
      * Refreshes a single property by ID from Supabase and caches it into Room.
      */
     suspend fun refreshPropertyById(id: String): Result<Property?> = withContext(Dispatchers.IO) {
-        val api = getActiveApiService()
         val helper = supabaseHelper
+        val api = getActiveApiService()
         if (api == null || helper == null || !helper.isConfigured) {
             return@withContext Result.success(propertyDao.getPropertyById(id))
         }
@@ -235,116 +242,144 @@ class PropertyRepository(
     }
 
     // ==========================================
-    // MUTATIONS (PERSIST TO ROOM THEN SYNC REMOTE)
+    // MUTATIONS (SUPABASE SSOT WRITE -> ROOM CACHE)
     // ==========================================
 
-    suspend fun saveProperty(property: Property) = withContext(Dispatchers.IO) {
-        // 1. Write to Room (Single Source of Truth)
-        propertyDao.insertProperty(property)
-
-        // 2. Sync to Supabase if configured
-        val api = getActiveApiService()
+    /**
+     * Inserts a new property into the Supabase PostgreSQL database.
+     * Reports success only after the remote database confirms the insert.
+     */
+    suspend fun saveProperty(property: Property): Result<Property> = withContext(Dispatchers.IO) {
         val helper = supabaseHelper
-        if (api != null && helper != null && helper.isConfigured) {
+        val api = getActiveApiService()
+
+        if (helper != null) {
+            if (!helper.isConfigured) {
+                return@withContext Result.failure(
+                    IllegalStateException("Supabase is not configured. Please configure your Supabase project in Profile > Settings to sync across devices.")
+                )
+            }
             try {
                 val dto = PropertyDto.fromDomain(property)
-                api.createProperty(
+                val response = api?.createProperty(
                     apiKey = helper.supabaseAnonKey,
                     authHeader = "Bearer ${helper.supabaseAnonKey}",
                     property = dto
                 )
+
+                val confirmedProperty = response?.firstOrNull()?.toDomain() ?: property.copy(id = dto.id)
+                propertyDao.insertProperty(confirmedProperty)
+                return@withContext Result.success(confirmedProperty)
             } catch (e: Exception) {
-                Log.w("PropertyRepository", "Remote sync for save failed: ${e.message}")
+                Log.e("PropertyRepository", "Supabase insert failed: ${e.message}", e)
+                return@withContext Result.failure(e)
             }
         }
+
+        // Direct local cache write (offline / unit tests)
+        propertyDao.insertProperty(property)
+        Result.success(property)
     }
 
-    suspend fun updateProperty(property: Property) = withContext(Dispatchers.IO) {
-        val updated = property.copy(updatedAt = System.currentTimeMillis())
-        propertyDao.updateProperty(updated)
-
-        val api = getActiveApiService()
+    /**
+     * Updates an existing property on Supabase PostgreSQL.
+     */
+    suspend fun updateProperty(property: Property): Result<Property> = withContext(Dispatchers.IO) {
         val helper = supabaseHelper
-        if (api != null && helper != null && helper.isConfigured) {
-            try {
-                val updates = mapOf(
-                    "title" to updated.title,
-                    "description" to updated.description,
-                    "property_type" to updated.propertyType.name,
-                    "rent" to updated.rent,
-                    "security_deposit" to updated.securityDeposit,
-                    "area_sqft" to updated.areaSqft,
-                    "bedrooms" to updated.bedrooms,
-                    "bathrooms" to updated.bathrooms,
-                    "address" to updated.address,
-                    "locality" to updated.locality,
-                    "city" to updated.city,
-                    "latitude" to updated.latitude,
-                    "longitude" to updated.longitude,
-                    "furnishing_status" to updated.furnishingStatus.name,
-                    "has_parking" to updated.hasParking,
-                    "water_supply" to updated.waterSupply.name,
-                    "has_electricity_backup" to updated.hasElectricityBackup,
-                    "has_balcony" to updated.hasBalcony,
-                    "contact_phone" to updated.contactPhone,
-                    "whatsapp_number" to updated.whatsappNumber,
-                    "status" to updated.status.name,
-                    "updated_at" to updated.updatedAt
+        val api = getActiveApiService()
+
+        if (helper != null) {
+            if (!helper.isConfigured) {
+                return@withContext Result.failure(
+                    IllegalStateException("Supabase is not configured. Please configure your Supabase credentials.")
                 )
-                api.updateProperty(
+            }
+            try {
+                val dto = PropertyDto.fromDomain(property)
+                val response = api?.updateProperty(
                     apiKey = helper.supabaseAnonKey,
                     authHeader = "Bearer ${helper.supabaseAnonKey}",
-                    idFilter = "eq.${updated.id}",
-                    propertyUpdates = updates
+                    idFilter = "eq.${dto.id}",
+                    ownerIdFilter = "eq.${dto.ownerId}",
+                    propertyUpdates = dto.toUpdateMap()
                 )
+
+                val updatedDomain = response?.firstOrNull()?.toDomain() ?: property.copy(updatedAt = System.currentTimeMillis())
+                propertyDao.insertProperty(updatedDomain)
+                return@withContext Result.success(updatedDomain)
             } catch (e: Exception) {
-                Log.w("PropertyRepository", "Remote sync for update failed: ${e.message}")
+                Log.e("PropertyRepository", "Supabase update failed: ${e.message}", e)
+                return@withContext Result.failure(e)
             }
         }
+
+        propertyDao.updateProperty(property)
+        Result.success(property)
     }
 
-    suspend fun updatePropertyStatus(id: String, status: PropertyStatus) = withContext(Dispatchers.IO) {
+    /**
+     * Updates availability status on Supabase and local cache.
+     */
+    suspend fun updatePropertyStatus(id: String, status: PropertyStatus, ownerId: String? = null): Result<Unit> = withContext(Dispatchers.IO) {
+        val helper = supabaseHelper
+        val api = getActiveApiService()
         val timestamp = System.currentTimeMillis()
-        propertyDao.updateStatus(id, status, timestamp)
 
-        val api = getActiveApiService()
-        val helper = supabaseHelper
-        if (api != null && helper != null && helper.isConfigured) {
-            try {
-                api.updateProperty(
-                    apiKey = helper.supabaseAnonKey,
-                    authHeader = "Bearer ${helper.supabaseAnonKey}",
-                    idFilter = "eq.$id",
-                    propertyUpdates = mapOf(
-                        "status" to status.name,
-                        "updated_at" to timestamp
-                    )
+        if (api == null || helper == null || !helper.isConfigured) {
+            propertyDao.updateStatus(id, status, timestamp)
+            return@withContext Result.success(Unit)
+        }
+
+        try {
+            val ownerFilter = if (ownerId != null) "eq.$ownerId" else null
+            api.updateProperty(
+                apiKey = helper.supabaseAnonKey,
+                authHeader = "Bearer ${helper.supabaseAnonKey}",
+                idFilter = "eq.$id",
+                ownerIdFilter = ownerFilter,
+                propertyUpdates = mapOf(
+                    "status" to status.displayName
                 )
-            } catch (e: Exception) {
-                Log.w("PropertyRepository", "Remote sync for status failed: ${e.message}")
-            }
+            )
+            propertyDao.updateStatus(id, status, timestamp)
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.w("PropertyRepository", "Remote sync for status failed: ${e.message}")
+            Result.failure(e)
         }
     }
 
-    suspend fun deleteProperty(property: Property) = withContext(Dispatchers.IO) {
-        deletePropertyById(property.id)
+    suspend fun deleteProperty(property: Property): Result<Unit> = withContext(Dispatchers.IO) {
+        deletePropertyById(property.id, property.ownerId)
     }
 
-    suspend fun deletePropertyById(id: String) = withContext(Dispatchers.IO) {
-        propertyDao.deletePropertyById(id)
-
-        val api = getActiveApiService()
+    suspend fun deletePropertyById(id: String, ownerId: String? = null): Result<Unit> = withContext(Dispatchers.IO) {
         val helper = supabaseHelper
-        if (api != null && helper != null && helper.isConfigured) {
-            try {
-                api.deleteProperty(
-                    apiKey = helper.supabaseAnonKey,
-                    authHeader = "Bearer ${helper.supabaseAnonKey}",
-                    idFilter = "eq.$id"
+        val api = getActiveApiService()
+
+        if (api == null || helper == null || !helper.isConfigured) {
+            propertyDao.deletePropertyById(id)
+            return@withContext Result.success(Unit)
+        }
+
+        try {
+            val ownerFilter = if (ownerId != null) "eq.$ownerId" else null
+            val response = api.deleteProperty(
+                apiKey = helper.supabaseAnonKey,
+                authHeader = "Bearer ${helper.supabaseAnonKey}",
+                idFilter = "eq.$id",
+                ownerIdFilter = ownerFilter
+            )
+            if (!response.isSuccessful && response.code() != 204 && response.code() != 200) {
+                return@withContext Result.failure(
+                    Exception("Failed to delete property on Supabase: HTTP ${response.code()}")
                 )
-            } catch (e: Exception) {
-                Log.w("PropertyRepository", "Remote sync for delete failed: ${e.message}")
             }
+            propertyDao.deletePropertyById(id)
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e("PropertyRepository", "Remote sync for delete failed: ${e.message}")
+            Result.failure(e)
         }
     }
 

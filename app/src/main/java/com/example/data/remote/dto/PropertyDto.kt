@@ -7,16 +7,15 @@ import com.example.data.model.PropertyStatus
 import com.example.data.model.PropertyType
 import com.example.data.model.WaterSupply
 import com.squareup.moshi.Json
-import com.squareup.moshi.JsonClass
+import java.util.UUID
 
-@JsonClass(generateAdapter = true)
 data class PropertyDto(
     @Json(name = "id") val id: String,
     @Json(name = "owner_id") val ownerId: String,
     @Json(name = "owner_name") val ownerName: String? = null,
     @Json(name = "title") val title: String,
     @Json(name = "description") val description: String? = null,
-    @Json(name = "property_type") val propertyType: String = "FLAT",
+    @Json(name = "property_type") val propertyType: String = "Flat",
     @Json(name = "rent") val rent: Int,
     @Json(name = "security_deposit") val securityDeposit: Int? = null,
     @Json(name = "area_sqft") val areaSqft: Int,
@@ -39,9 +38,8 @@ data class PropertyDto(
     @Json(name = "status") val status: String? = null,
     @Json(name = "is_featured") val isFeatured: Boolean? = null,
     @Json(name = "image_urls") val imageUrls: List<String>? = null,
-    @Json(name = "is_sample") val isSample: Boolean? = null,
-    @Json(name = "created_at") val createdAt: Long? = null,
-    @Json(name = "updated_at") val updatedAt: Long? = null
+    @Json(name = "created_at") val createdAt: String? = null,
+    @Json(name = "updated_at") val updatedAt: String? = null
 ) {
     fun toDomain(): Property {
         return Property(
@@ -50,11 +48,7 @@ data class PropertyDto(
             ownerName = ownerName ?: "Property Owner",
             title = title,
             description = description ?: "",
-            propertyType = try {
-                PropertyType.valueOf(propertyType.uppercase())
-            } catch (_: Exception) {
-                PropertyType.FLAT
-            },
+            propertyType = PropertyType.fromString(propertyType),
             rent = rent,
             securityDeposit = securityDeposit ?: (rent * 2),
             areaSqft = areaSqft,
@@ -65,41 +59,71 @@ data class PropertyDto(
             city = city,
             latitude = latitude ?: 0.0,
             longitude = longitude ?: 0.0,
-            furnishingStatus = try {
-                FurnishingStatus.valueOf(furnishingStatus?.uppercase() ?: "")
-            } catch (_: Exception) {
-                FurnishingStatus.UNFURNISHED
-            },
+            furnishingStatus = FurnishingStatus.fromString(furnishingStatus ?: ""),
             hasParking = hasParking ?: false,
-            waterSupply = try {
-                WaterSupply.valueOf(waterSupply?.uppercase() ?: "")
-            } catch (_: Exception) {
-                WaterSupply.CORPORATION
-            },
+            waterSupply = WaterSupply.fromString(waterSupply ?: ""),
             hasElectricityBackup = hasElectricityBackup ?: false,
             hasBalcony = hasBalcony ?: false,
             amenities = amenities ?: emptyList(),
             contactPhone = contactPhone ?: "+91 98765 43210",
             whatsappNumber = whatsappNumber ?: "919876543210",
-            listedBy = try {
-                ListedBy.valueOf(listedBy?.uppercase() ?: "")
-            } catch (_: Exception) {
-                ListedBy.OWNER
-            },
-            status = try {
-                PropertyStatus.valueOf(status?.uppercase() ?: "")
-            } catch (_: Exception) {
-                PropertyStatus.AVAILABLE
-            },
+            listedBy = ListedBy.fromString(listedBy ?: ""),
+            status = PropertyStatus.fromString(status ?: ""),
             isFeatured = isFeatured ?: false,
             imageUrls = imageUrls ?: emptyList(),
-            isSample = isSample ?: false,
-            createdAt = createdAt ?: System.currentTimeMillis(),
-            updatedAt = updatedAt ?: System.currentTimeMillis()
+            isSample = false,
+            createdAt = parseIsoOrEpoch(createdAt),
+            updatedAt = parseIsoOrEpoch(updatedAt)
         )
     }
 
+    fun toUpdateMap(): Map<String, Any?> = mapOf(
+        "title" to title,
+        "description" to (description ?: ""),
+        "property_type" to propertyType,
+        "rent" to rent,
+        "security_deposit" to (securityDeposit ?: 0),
+        "area_sqft" to areaSqft,
+        "bedrooms" to (bedrooms ?: 1),
+        "bathrooms" to (bathrooms ?: 1),
+        "address" to address,
+        "locality" to (locality ?: ""),
+        "city" to city,
+        "latitude" to (latitude ?: 0.0),
+        "longitude" to (longitude ?: 0.0),
+        "furnishing_status" to (furnishingStatus ?: "Unfurnished"),
+        "has_parking" to (hasParking ?: false),
+        "water_supply" to (waterSupply ?: "Corporation"),
+        "has_electricity_backup" to (hasElectricityBackup ?: false),
+        "has_balcony" to (hasBalcony ?: false),
+        "amenities" to (amenities ?: emptyList<String>()),
+        "contact_phone" to (contactPhone ?: ""),
+        "whatsapp_number" to (whatsappNumber ?: ""),
+        "listed_by" to (listedBy ?: "Owner"),
+        "status" to (status ?: "Available"),
+        "is_featured" to (isFeatured ?: false),
+        "image_urls" to (imageUrls ?: emptyList<String>()),
+        "owner_name" to (ownerName ?: "")
+    )
+
     companion object {
+        private fun ensureValidUuid(raw: String): String {
+            return try {
+                UUID.fromString(raw).toString()
+            } catch (_: Exception) {
+                UUID.nameUUIDFromBytes(raw.toByteArray()).toString()
+            }
+        }
+
+        private fun parseIsoOrEpoch(raw: String?): Long {
+            if (raw.isNullOrBlank()) return System.currentTimeMillis()
+            return try {
+                java.time.Instant.parse(raw).toEpochMilli()
+            } catch (_: Exception) {
+                raw.toLongOrNull() ?: System.currentTimeMillis()
+            }
+        }
+
         fun fromDomain(property: Property): PropertyDto {
             return PropertyDto(
                 id = property.id,
@@ -107,7 +131,7 @@ data class PropertyDto(
                 ownerName = property.ownerName,
                 title = property.title,
                 description = property.description,
-                propertyType = property.propertyType.name,
+                propertyType = property.propertyType.displayName,
                 rent = property.rent,
                 securityDeposit = property.securityDeposit,
                 areaSqft = property.areaSqft,
@@ -118,21 +142,20 @@ data class PropertyDto(
                 city = property.city,
                 latitude = property.latitude,
                 longitude = property.longitude,
-                furnishingStatus = property.furnishingStatus.name,
+                furnishingStatus = property.furnishingStatus.displayName,
                 hasParking = property.hasParking,
-                waterSupply = property.waterSupply.name,
+                waterSupply = property.waterSupply.displayName,
                 hasElectricityBackup = property.hasElectricityBackup,
                 hasBalcony = property.hasBalcony,
                 amenities = property.amenities,
                 contactPhone = property.contactPhone,
                 whatsappNumber = property.whatsappNumber,
-                listedBy = property.listedBy.name,
-                status = property.status.name,
+                listedBy = property.listedBy.displayName,
+                status = property.status.displayName,
                 isFeatured = property.isFeatured,
                 imageUrls = property.imageUrls,
-                isSample = property.isSample,
-                createdAt = property.createdAt,
-                updatedAt = property.updatedAt
+                createdAt = null,
+                updatedAt = null
             )
         }
     }

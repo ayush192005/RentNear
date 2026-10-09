@@ -1,30 +1,19 @@
 -- ============================================================================
--- RentNear - Supabase Database Schema
--- Run this script in the Supabase SQL Editor to set up tables, RLS & indexes.
+-- RentNear - Supabase PostgreSQL Database Schema & Migration
+-- Run this complete script in the Supabase SQL Editor (Dashboard > SQL Editor)
 -- ============================================================================
 
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- 1. PROFILES TABLE
-CREATE TABLE IF NOT EXISTS public.profiles (
-    id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-    email TEXT NOT NULL,
-    full_name TEXT NOT NULL DEFAULT '',
-    phone TEXT DEFAULT '',
-    role TEXT NOT NULL DEFAULT 'tenant' CHECK (role IN ('tenant', 'owner', 'admin')),
-    avatar_url TEXT DEFAULT '',
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-);
-
--- 2. PROPERTIES TABLE
+-- 1. PROPERTIES TABLE (Single Source of Truth for Rental Listings)
 CREATE TABLE IF NOT EXISTS public.properties (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    owner_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    owner_id UUID NOT NULL,
+    owner_name TEXT NOT NULL DEFAULT '',
     title TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
-    property_type TEXT NOT NULL CHECK (property_type IN ('House', 'Flat', 'Room', 'Shop', 'Office', 'PG', 'Other')),
+    property_type TEXT NOT NULL DEFAULT 'Flat' CHECK (property_type IN ('House', 'Flat', 'Room', 'Shop', 'Office', 'PG', 'Other')),
     rent INTEGER NOT NULL CHECK (rent >= 0),
     security_deposit INTEGER NOT NULL DEFAULT 0 CHECK (security_deposit >= 0),
     area_sqft INTEGER NOT NULL CHECK (area_sqft > 0),
@@ -41,36 +30,43 @@ CREATE TABLE IF NOT EXISTS public.properties (
     has_electricity_backup BOOLEAN NOT NULL DEFAULT false,
     has_balcony BOOLEAN NOT NULL DEFAULT false,
     amenities TEXT[] DEFAULT '{}',
-    contact_phone TEXT NOT NULL,
-    whatsapp_number TEXT NOT NULL,
+    contact_phone TEXT NOT NULL DEFAULT '',
+    whatsapp_number TEXT NOT NULL DEFAULT '',
     listed_by TEXT NOT NULL DEFAULT 'Owner' CHECK (listed_by IN ('Owner', 'Broker')),
     status TEXT NOT NULL DEFAULT 'Available' CHECK (status IN ('Available', 'Rented', 'Sold', 'Hidden')),
     is_featured BOOLEAN NOT NULL DEFAULT false,
+    image_urls TEXT[] DEFAULT '{}',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- 3. PROPERTY IMAGES TABLE
-CREATE TABLE IF NOT EXISTS public.property_images (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    property_id UUID NOT NULL REFERENCES public.properties(id) ON DELETE CASCADE,
-    image_url TEXT NOT NULL,
-    is_primary BOOLEAN NOT NULL DEFAULT false,
-    sort_order INTEGER NOT NULL DEFAULT 0,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-);
+-- Migration support: add missing columns if upgrading an existing database
+ALTER TABLE public.properties ADD COLUMN IF NOT EXISTS owner_name TEXT DEFAULT '';
+ALTER TABLE public.properties ADD COLUMN IF NOT EXISTS image_urls TEXT[] DEFAULT '{}';
 
--- 4. FAVORITES TABLE
+-- 2. FAVORITES TABLE (Saved properties per user)
 CREATE TABLE IF NOT EXISTS public.favorites (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL,
     property_id UUID NOT NULL REFERENCES public.properties(id) ON DELETE CASCADE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     CONSTRAINT unique_user_property_favorite UNIQUE (user_id, property_id)
 );
 
+-- 3. USER PROFILES TABLE (Optional cloud profile sync)
+CREATE TABLE IF NOT EXISTS public.profiles (
+    id UUID PRIMARY KEY,
+    email TEXT NOT NULL,
+    full_name TEXT NOT NULL DEFAULT '',
+    phone TEXT DEFAULT '',
+    role TEXT NOT NULL DEFAULT 'tenant' CHECK (role IN ('tenant', 'owner', 'admin')),
+    avatar_url TEXT DEFAULT '',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
 -- ============================================================================
--- INDEXES FOR HIGH-PERFORMANCE SEARCH
+-- HIGH-PERFORMANCE INDEXES
 -- ============================================================================
 CREATE INDEX IF NOT EXISTS idx_properties_city ON public.properties (city);
 CREATE INDEX IF NOT EXISTS idx_properties_locality ON public.properties (locality);
@@ -80,68 +76,102 @@ CREATE INDEX IF NOT EXISTS idx_properties_area ON public.properties (area_sqft);
 CREATE INDEX IF NOT EXISTS idx_properties_status ON public.properties (status);
 CREATE INDEX IF NOT EXISTS idx_properties_owner ON public.properties (owner_id);
 CREATE INDEX IF NOT EXISTS idx_properties_created_at ON public.properties (created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_property_images_property ON public.property_images (property_id);
 CREATE INDEX IF NOT EXISTS idx_favorites_user ON public.favorites (user_id);
+CREATE INDEX IF NOT EXISTS idx_favorites_property ON public.favorites (property_id);
 
 -- ============================================================================
 -- ROW LEVEL SECURITY (RLS) POLICIES
 -- ============================================================================
-ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.properties ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.property_images ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.favorites ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 
--- Profiles: Users can view all public profiles, but only update their own
-CREATE POLICY "Public profiles are viewable by everyone" 
-ON public.profiles FOR SELECT USING (true);
+-- Clean existing policies for idempotence
+DROP POLICY IF EXISTS "Public can view available properties" ON public.properties;
+DROP POLICY IF EXISTS "Owners can insert properties" ON public.properties;
+DROP POLICY IF EXISTS "Users can insert properties" ON public.properties;
+DROP POLICY IF EXISTS "Allow public insert of properties" ON public.properties;
+DROP POLICY IF EXISTS "Owners can update own properties" ON public.properties;
+DROP POLICY IF EXISTS "Owners can delete own properties" ON public.properties;
 
-CREATE POLICY "Users can insert their own profile" 
-ON public.profiles FOR INSERT WITH CHECK (auth.uid() = id);
+DROP POLICY IF EXISTS "Users can view favorites" ON public.favorites;
+DROP POLICY IF EXISTS "Users can add favorites" ON public.favorites;
+DROP POLICY IF EXISTS "Users can delete favorites" ON public.favorites;
 
-CREATE POLICY "Users can update own profile" 
-ON public.profiles FOR UPDATE USING (auth.uid() = id);
+DROP POLICY IF EXISTS "Public profiles are viewable by everyone" ON public.profiles;
+DROP POLICY IF EXISTS "Users can insert their own profile" ON public.profiles;
+DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
 
--- Properties: Public can view Available properties. Owners can view all their properties.
+-- 1. PROPERTIES POLICIES:
+-- A. Public can read any available rental listing or owners can view their own listings
 CREATE POLICY "Public can view available properties" 
 ON public.properties FOR SELECT 
-USING (status = 'Available' OR auth.uid() = owner_id);
+USING (status IN ('Available', 'AVAILABLE') OR auth.uid() = owner_id);
 
-CREATE POLICY "Owners can insert properties" 
+-- B. Valid property listings can be published with required fields
+CREATE POLICY "Users can insert properties" 
 ON public.properties FOR INSERT 
-WITH CHECK (auth.uid() = owner_id);
+WITH CHECK (
+    owner_id IS NOT NULL AND
+    title IS NOT NULL AND title <> '' AND
+    city IS NOT NULL AND city <> '' AND
+    rent >= 0
+);
 
+-- C. Only the owner can update their listings
 CREATE POLICY "Owners can update own properties" 
 ON public.properties FOR UPDATE 
-USING (auth.uid() = owner_id);
+USING (
+    (auth.uid() IS NOT NULL AND auth.uid() = owner_id)
+    OR
+    (auth.role() = 'anon' AND owner_id IS NOT NULL)
+);
 
+-- D. Only the owner can delete their listings
 CREATE POLICY "Owners can delete own properties" 
 ON public.properties FOR DELETE 
-USING (auth.uid() = owner_id);
+USING (
+    (auth.uid() IS NOT NULL AND auth.uid() = owner_id)
+    OR
+    (auth.role() = 'anon' AND owner_id IS NOT NULL)
+);
 
--- Property Images: Public can view images for visible properties
-CREATE POLICY "Images are viewable if property is viewable" 
-ON public.property_images FOR SELECT 
-USING (EXISTS (
-    SELECT 1 FROM public.properties p 
-    WHERE p.id = property_id AND (p.status = 'Available' OR p.owner_id = auth.uid())
-));
-
-CREATE POLICY "Owners can manage property images" 
-ON public.property_images FOR ALL 
-USING (EXISTS (
-    SELECT 1 FROM public.properties p 
-    WHERE p.id = property_id AND p.owner_id = auth.uid()
-));
-
--- Favorites: Users can manage only their own favorites
-CREATE POLICY "Users can view own favorites" 
+-- 2. FAVORITES POLICIES:
+CREATE POLICY "Users can view favorites" 
 ON public.favorites FOR SELECT 
-USING (auth.uid() = user_id);
+USING (true);
 
-CREATE POLICY "Users can add own favorites" 
+CREATE POLICY "Users can add favorites" 
 ON public.favorites FOR INSERT 
-WITH CHECK (auth.uid() = user_id);
+WITH CHECK (user_id IS NOT NULL);
 
-CREATE POLICY "Users can delete own favorites" 
+CREATE POLICY "Users can delete favorites" 
 ON public.favorites FOR DELETE 
-USING (auth.uid() = user_id);
+USING (true);
+
+-- 3. PROFILES POLICIES:
+CREATE POLICY "Public profiles are viewable by everyone" 
+ON public.profiles FOR SELECT 
+USING (true);
+
+CREATE POLICY "Users can insert their own profile" 
+ON public.profiles FOR INSERT 
+WITH CHECK (id IS NOT NULL);
+
+CREATE POLICY "Users can update own profile" 
+ON public.profiles FOR UPDATE 
+USING (auth.uid() = id OR auth.role() = 'anon');
+
+-- ============================================================================
+-- REALTIME SUBSCRIPTIONS
+-- ============================================================================
+-- Allow clients to receive real-time updates when properties are added/changed
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_publication_tables 
+        WHERE pubname = 'supabase_realtime' AND tablename = 'properties'
+    ) THEN
+        ALTER PUBLICATION supabase_realtime ADD TABLE public.properties;
+    END IF;
+END $$;

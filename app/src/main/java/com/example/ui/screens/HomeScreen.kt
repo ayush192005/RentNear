@@ -32,9 +32,12 @@ import androidx.compose.material.icons.filled.Hotel
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.MeetingRoom
 import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Store
 import androidx.compose.material.icons.filled.Tune
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -91,6 +94,13 @@ fun HomeScreen(
     val recentProperties by viewModel.recentProperties.collectAsState()
     val favoriteIds by viewModel.favoriteIds.collectAsState()
     val currentFilter by viewModel.currentFilter.collectAsState()
+    val isRefreshing by viewModel.isRefreshing.collectAsState()
+    val syncError by viewModel.syncError.collectAsState()
+
+    // Refresh listings from Supabase whenever the home screen becomes active (e.g. after posting a property)
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        viewModel.refreshRemoteData()
+    }
 
     var searchInputText by remember { mutableStateOf(currentFilter.searchQuery) }
 
@@ -149,31 +159,92 @@ fun HomeScreen(
                             )
                         }
 
-                        // Language Switcher Button [ English | हिंदी ]
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Manual Refresh Listings Button
+                            Surface(
+                                shape = RoundedCornerShape(20.dp),
+                                color = Color.White.copy(alpha = 0.22f),
+                                modifier = Modifier
+                                    .clickable { viewModel.refreshRemoteData() }
+                                    .testTag("refresh_listings_button")
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Refresh,
+                                        contentDescription = "Refresh",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = if (isRefreshing) "Syncing..." else "Refresh",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                }
+                            }
+
+                            // Language Switcher Button [ English | हिंदी ]
+                            Surface(
+                                shape = RoundedCornerShape(20.dp),
+                                color = Color.White.copy(alpha = 0.22f),
+                                modifier = Modifier
+                                    .clickable { LanguageManager.toggleLanguage() }
+                                    .testTag("language_toggle_button")
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Language,
+                                        contentDescription = "Language",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = if (currentLanguage == AppLanguage.ENGLISH) "हिंदी" else "English",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    if (syncError != null) {
+                        Spacer(modifier = Modifier.height(8.dp))
                         Surface(
-                            shape = RoundedCornerShape(20.dp),
-                            color = Color.White.copy(alpha = 0.22f),
-                            modifier = Modifier
-                                .clickable { LanguageManager.toggleLanguage() }
-                                .testTag("language_toggle_button")
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.95f),
+                            modifier = Modifier.fillMaxWidth()
                         ) {
                             Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Language,
-                                    contentDescription = "Language",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
                                 Text(
-                                    text = if (currentLanguage == AppLanguage.ENGLISH) "हिंदी" else "English",
+                                    text = "Sync error: $syncError",
                                     style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White
+                                    color = MaterialTheme.colorScheme.onErrorContainer,
+                                    modifier = Modifier.weight(1f)
                                 )
+                                TextButton(
+                                    onClick = { viewModel.refreshRemoteData() },
+                                    contentPadding = PaddingValues(0.dp)
+                                ) {
+                                    Text("Retry", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                                }
                             }
                         }
                     }
@@ -442,14 +513,29 @@ fun HomeScreen(
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center
                         )
                         Spacer(modifier = Modifier.height(16.dp))
-                        Button(
-                            onClick = onNavigateToAddProperty,
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.testTag("post_first_property_button")
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(if (currentLanguage == AppLanguage.HINDI) "पहली प्रॉपर्टी जोड़ें" else "Post First Property")
+                            Button(
+                                onClick = onNavigateToAddProperty,
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.testTag("post_first_property_button")
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(if (currentLanguage == AppLanguage.HINDI) "पहली प्रॉपर्टी जोड़ें" else "Post First Property")
+                            }
+
+                            androidx.compose.material3.OutlinedButton(
+                                onClick = { viewModel.refreshRemoteData() },
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.testTag("empty_state_refresh_button")
+                            ) {
+                                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(if (isRefreshing) "Syncing..." else "Refresh")
+                            }
                         }
                     }
                 }

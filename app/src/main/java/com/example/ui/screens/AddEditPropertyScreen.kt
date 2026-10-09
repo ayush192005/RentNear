@@ -154,6 +154,7 @@ fun AddEditPropertyScreen(
 
     var tempCameraFile by remember { mutableStateOf<File?>(null) }
     var tempCameraUri by remember { mutableStateOf<Uri?>(null) }
+    var isSubmitting by remember { mutableStateOf(false) }
 
     // Launcher for Full-Resolution Camera capture with FileProvider
     val takePictureLauncher = rememberLauncherForActivityResult(
@@ -872,29 +873,57 @@ fun AddEditPropertyScreen(
                             updatedAt = System.currentTimeMillis()
                         )
 
+                        isSubmitting = true
                         if (existingProperty != null) {
-                            viewModel.updateProperty(propertyToSave) {
-                                Toast.makeText(context, "Property updated successfully!", Toast.LENGTH_SHORT).show()
-                                onNavigateBack()
+                            viewModel.updateProperty(propertyToSave) { result ->
+                                isSubmitting = false
+                                result.onSuccess {
+                                    Toast.makeText(context, "Property updated successfully on Supabase!", Toast.LENGTH_SHORT).show()
+                                    onNavigateBack()
+                                }.onFailure { error ->
+                                    val msg = error.localizedMessage ?: "Failed to update property"
+                                    Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                                }
                             }
                         } else {
-                            viewModel.saveProperty(propertyToSave) {
-                                Toast.makeText(context, "Property published successfully!", Toast.LENGTH_SHORT).show()
-                                onNavigateBack()
+                            viewModel.saveProperty(propertyToSave) { result ->
+                                isSubmitting = false
+                                result.onSuccess {
+                                    Toast.makeText(context, "Property published successfully to Supabase!", Toast.LENGTH_SHORT).show()
+                                    onNavigateBack()
+                                }.onFailure { error ->
+                                    val msg = error.localizedMessage ?: "Failed to publish property"
+                                    Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                                }
                             }
                         }
                     },
+                    enabled = !isSubmitting,
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(54.dp)
                         .testTag("save_property_button")
                 ) {
-                    Text(
-                        text = if (existingProperty != null) "Update Property" else "Publish Property",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
+                    if (isSubmitting) {
+                        androidx.compose.material3.CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            strokeWidth = 2.5.dp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (existingProperty != null) "Updating on Database..." else "Publishing to Database...",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    } else {
+                        Text(
+                            text = if (existingProperty != null) "Update Property" else "Publish Property",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
                 Spacer(modifier = Modifier.height(24.dp))
             }

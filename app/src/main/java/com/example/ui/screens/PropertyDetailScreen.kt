@@ -125,6 +125,10 @@ fun PropertyDetailScreen(
     val propertyState by propertyRepository.getPropertyByIdFlow(propertyId).collectAsState(initial = null)
     val property = propertyState
 
+    androidx.compose.runtime.LaunchedEffect(propertyId) {
+        propertyRepository.refreshPropertyById(propertyId)
+    }
+
     if (property == null) {
         Scaffold(
             topBar = {

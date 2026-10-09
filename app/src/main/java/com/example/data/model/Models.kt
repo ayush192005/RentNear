@@ -77,15 +77,34 @@ enum class FurnishingStatus(val displayName: String) {
 }
 
 enum class WaterSupply(val displayName: String) {
-    HOURS_24_7("24/7 Supply"),
+    HOURS_24_7("24/7"),
     CORPORATION("Corporation"),
     BOREWELL("Borewell"),
-    OTHER("Other")
+    OTHER("Other");
+
+    companion object {
+        fun fromString(value: String): WaterSupply {
+            return entries.find {
+                it.name.equals(value, ignoreCase = true) ||
+                it.displayName.equals(value, ignoreCase = true) ||
+                (value.contains("24", ignoreCase = true) && it == HOURS_24_7)
+            } ?: CORPORATION
+        }
+    }
 }
 
 enum class ListedBy(val displayName: String) {
     OWNER("Owner"),
-    BROKER("Broker")
+    BROKER("Broker");
+
+    companion object {
+        fun fromString(value: String): ListedBy {
+            return entries.find {
+                it.name.equals(value, ignoreCase = true) ||
+                it.displayName.equals(value, ignoreCase = true)
+            } ?: OWNER
+        }
+    }
 }
 
 enum class SortOption(val displayName: String) {

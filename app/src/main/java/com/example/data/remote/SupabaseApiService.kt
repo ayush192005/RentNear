@@ -60,6 +60,7 @@ interface SupabaseApiService {
         @Header("apikey") apiKey: String,
         @Header("Authorization") authHeader: String,
         @Query("id") idFilter: String, // e.g. "eq.123-uuid"
+        @Query("owner_id") ownerIdFilter: String? = null,
         @Header("Prefer") prefer: String = "return=representation",
         @Body propertyUpdates: Map<String, @JvmSuppressWildcards Any?>
     ): List<PropertyDto>
@@ -68,7 +69,8 @@ interface SupabaseApiService {
     suspend fun deleteProperty(
         @Header("apikey") apiKey: String,
         @Header("Authorization") authHeader: String,
-        @Query("id") idFilter: String // e.g. "eq.123-uuid"
+        @Query("id") idFilter: String, // e.g. "eq.123-uuid"
+        @Query("owner_id") ownerIdFilter: String? = null
     ): Response<Unit>
 
     // ==========================================

@@ -84,6 +84,11 @@ fun OwnerDashboardScreen(
 ) {
     val currentLanguage by LanguageManager.currentLanguage.collectAsState()
     val ownerProperties by viewModel.ownerProperties.collectAsState()
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+        viewModel.refreshRemoteData()
+    }
 
     var propertyToDelete by remember { mutableStateOf<Property?>(null) }
 
@@ -406,7 +411,14 @@ fun OwnerDashboardScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        viewModel.deleteProperty(property)
+                        viewModel.deleteProperty(property) { result ->
+                            if (result.isSuccess) {
+                                android.widget.Toast.makeText(context, "Property deleted from database", android.widget.Toast.LENGTH_SHORT).show()
+                            } else {
+                                val msg = result.exceptionOrNull()?.localizedMessage ?: "Failed to delete"
+                                android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
+                            }
+                        }
                         propertyToDelete = null
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)

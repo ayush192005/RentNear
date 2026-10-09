@@ -3,9 +3,7 @@ package com.example.data.remote.dto
 import com.example.data.model.UserProfile
 import com.example.data.model.UserRole
 import com.squareup.moshi.Json
-import com.squareup.moshi.JsonClass
 
-@JsonClass(generateAdapter = true)
 data class UserProfileDto(
     @Json(name = "id") val id: String,
     @Json(name = "email") val email: String,
