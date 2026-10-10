@@ -75,7 +75,11 @@ object DatabaseModule {
     /**
      * Provides the AuthRepository instance using injected database and context.
      */
-    fun provideAuthRepository(database: AppDatabase, context: Context): AuthRepository {
-        return AuthRepository(database, context)
+    fun provideAuthRepository(
+        database: AppDatabase,
+        context: Context,
+        supabaseHelper: com.example.data.supabase.SupabaseHelper? = null
+    ): AuthRepository {
+        return AuthRepository(database, context, supabaseHelper)
     }
 }

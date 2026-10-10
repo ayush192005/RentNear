@@ -684,7 +684,7 @@ private fun EditProfileDialog(
 }
 
 @Composable
-private fun SupabaseConfigDialog(
+fun SupabaseConfigDialog(
     helper: com.example.data.supabase.SupabaseHelper,
     onDismiss: () -> Unit,
     onSaved: () -> Unit = onDismiss

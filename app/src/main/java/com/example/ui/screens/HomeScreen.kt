@@ -96,6 +96,9 @@ fun HomeScreen(
     val currentFilter by viewModel.currentFilter.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
     val syncError by viewModel.syncError.collectAsState()
+    val isDatabaseConnected by viewModel.isDatabaseConnected.collectAsState()
+
+    var showConfigDialog by remember { mutableStateOf(false) }
 
     // Refresh listings from Supabase whenever the home screen becomes active (e.g. after posting a property)
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
@@ -221,6 +224,56 @@ fun HomeScreen(
                         }
                     }
 
+                    // Database Connection Indicator Pill
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Surface(
+                        shape = RoundedCornerShape(20.dp),
+                        color = when {
+                            isRefreshing -> Color(0xFF3B82F6).copy(alpha = 0.25f)
+                            isDatabaseConnected -> Color(0xFF10B981).copy(alpha = 0.25f)
+                            else -> Color(0xFFEF4444).copy(alpha = 0.30f)
+                        },
+                        modifier = Modifier
+                            .clickable {
+                                if (!viewModel.supabaseHelper.isConfigured) {
+                                    showConfigDialog = true
+                                } else {
+                                    viewModel.refreshRemoteData()
+                                }
+                            }
+                            .testTag("database_connection_status_badge")
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        when {
+                                            isRefreshing -> Color(0xFF60A5FA)
+                                            isDatabaseConnected -> Color(0xFF34D399)
+                                            else -> Color(0xFFF87171)
+                                        }
+                                    )
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = when {
+                                    isRefreshing -> "Syncing with Database..."
+                                    isDatabaseConnected -> "Live Database Connected (Supabase)"
+                                    !viewModel.supabaseHelper.isConfigured -> "Database Not Configured (Tap to setup)"
+                                    else -> "Database Offline (Tap to retry)"
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                        }
+                    }
+
                     if (syncError != null) {
                         Spacer(modifier = Modifier.height(8.dp))
                         Surface(
@@ -249,7 +302,7 @@ fun HomeScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(18.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
                     // Prominent Direct Search Input Bar
                     Surface(
@@ -598,6 +651,18 @@ fun HomeScreen(
                 }
             }
         }
+    }
+
+    // Supabase Configuration Dialog (can be opened from connection badge on HomeScreen)
+    if (showConfigDialog) {
+        SupabaseConfigDialog(
+            helper = viewModel.supabaseHelper,
+            onDismiss = { showConfigDialog = false },
+            onSaved = {
+                showConfigDialog = false
+                viewModel.refreshRemoteData()
+            }
+        )
     }
 }
 

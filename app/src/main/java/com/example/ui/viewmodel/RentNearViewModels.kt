@@ -35,7 +35,11 @@ class RentNearViewModel(
         database = db,
         supabaseHelper = supabaseHelper
     )
-    val authRepository = DatabaseModule.provideAuthRepository(db, application)
+    val authRepository = DatabaseModule.provideAuthRepository(
+        database = db,
+        context = application,
+        supabaseHelper = supabaseHelper
+    )
     private val geminiSearchService = GeminiSearchService()
 
     // Auth State
@@ -96,10 +100,24 @@ class RentNearViewModel(
     private val _syncError = MutableStateFlow<String?>(null)
     val syncError: StateFlow<String?> = _syncError.asStateFlow()
 
+    val isDatabaseConnected: StateFlow<Boolean> = _syncError.map { err ->
+        supabaseHelper.isConfigured && err == null
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), supabaseHelper.isConfigured)
+
     init {
         viewModelScope.launch {
             propertyRepository.ensureSeeded()
             refreshRemoteData()
+            // Realtime polling loop (every 10 seconds) for immediate multi-user synchronization
+            while (kotlin.coroutines.coroutineContext[kotlinx.coroutines.Job]?.isActive != false) {
+                kotlinx.coroutines.delay(10_000)
+                if (supabaseHelper.isConfigured) {
+                    val result = propertyRepository.refreshProperties()
+                    if (result.isSuccess) {
+                        _syncError.value = null
+                    }
+                }
+            }
         }
     }
 

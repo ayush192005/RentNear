@@ -113,6 +113,14 @@ interface SupabaseApiService {
         @Query("select") select: String = "*"
     ): List<UserProfileDto>
 
+    @GET("rest/v1/profiles")
+    suspend fun getProfileByEmail(
+        @Header("apikey") apiKey: String,
+        @Header("Authorization") authHeader: String,
+        @Query("email") emailFilter: String, // e.g. "eq.user@example.com"
+        @Query("select") select: String = "*"
+    ): List<UserProfileDto>
+
     @POST("rest/v1/profiles")
     suspend fun upsertProfile(
         @Header("apikey") apiKey: String,
